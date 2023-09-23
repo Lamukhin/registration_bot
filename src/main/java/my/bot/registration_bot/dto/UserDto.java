@@ -5,13 +5,19 @@ import lombok.Data;
 @Data
 public class UserDto {
 
+	private long userId;
 	private long chatId;
-	private String userName;
+	
 	private String firstName;
-	private String userFullName;
+	private String lastName;
+	private String userName;
+	
 	private String phoneNumber;
 	private String instagramNickname;
+	
 	private boolean alreadyRegistred = false;
+	private boolean alreadyGotInstaNick = false;
+	private boolean alreadyGotContact = false;
 
 	public UserDto() {
 	}
@@ -25,9 +31,9 @@ public class UserDto {
 
 	public boolean isFull() {
 		if ((chatId == 0) 
-			|| (userName == null)
+			|| (userId == 0)
 			|| (firstName == null)
-			|| (userFullName == null)
+			|| (userName == null)
 			|| (phoneNumber == null)
 			|| (instagramNickname == null)) 
 		{

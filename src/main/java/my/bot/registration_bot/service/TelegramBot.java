@@ -1,21 +1,22 @@
 package my.bot.registration_bot.service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
-import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
 import org.telegram.telegrambots.meta.api.objects.commands.scope.BotCommandScopeDefault;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import com.vdurmont.emoji.EmojiParser;
@@ -32,96 +33,151 @@ import static my.bot.registration_bot.text.Texts.*;
 @Service
 public class TelegramBot extends TelegramLongPollingBot {
 
-	final BotConfig config;
-	//вот это поле было static, но сегодня уже я убрал. 
-	//смысл в том, что в эту дто мы наполняем данные, спрашивая их у юзера.
-	//а потом при заполнении кидаем в бд
-	//вопрос: если одновременно к боту будут обращаться 10 пользователей, то инфомрация
-	//внутри статической версии будет постоянно перезаписываться?
-	private /*static*/ UserDto currentUser;
-
+	@Autowired
+	private MessageService messageService;
+	@Autowired
+	private DataTransferService dataTransferService;
 	@Autowired
 	private UserRepository userRepository;
 
+	final BotConfig config;
+
+	// Long - это chatId, чтобы бот понимал, из какого чата ему "пришло".
+	// UserDto - все нужные данные, получаемые от пользователя в процессе общения с
+	// ботом.
+
+	private static Map<Long, UserDto> usersAndMessages = new HashMap<>();
+
+	// инициализация бота с конфигурацией и листом команд
 	public TelegramBot(BotConfig botConfig) {
 		this.config = botConfig;
 		List<BotCommand> listOfCommands = new ArrayList<>();
 		listOfCommands.add(new BotCommand("/start", "Начать использовать бота"));
+		listOfCommands.add(new BotCommand("/help", "Обратиться за помощью"));
 		try {
 			this.execute(new SetMyCommands(listOfCommands, new BotCommandScopeDefault(), null));
 		} catch (TelegramApiException ex) {
 			log.error("Error setting bot's command list : " + ex.getMessage());
 		}
-
 	}
 
 	@Override
 	public void onUpdateReceived(Update update) {
-		if (update.hasMessage() && update.getMessage().hasText()) {
-			String messageText = update.getMessage().getText().trim();
-			long chatId = update.getMessage().getChatId();
-			String userFirstName = update.getMessage().getChat().getFirstName();
-
-			if (messageText.equals("/start")) {
-				startCommandReceived(chatId, userFirstName);
-				sendNewMessage(chatId, REG_HELP_CHOICE);
-				currentUser = new UserDto(chatId, update.getMessage().getChat().getUserName(),
-						update.getMessage().getChat().getFirstName());
-				log.warn(currentUser.toString());
-			} else
-
-			if (messageText.matches("^[а-яА-ЯёЁ ]+")) {
-				currentUser.setUserFullName(messageText);
-				// можно добавить через этот же флаг деление на добавлено или обновлено, но это
-				// не обязательно
-				sendNewMessage(chatId, "Ваше имя добавлено или обновлено.\n");
-				checkIfFullInfoIsProvided(chatId);
-				log.warn(currentUser.toString());
-				if (!currentUser.isAlreadyRegistred()) {
-					sendNewMessage(chatId, "Введите ваш номер телефона, начинающийся с +7:");
-				}
-			} else
-
-			if (messageText.startsWith("+7")) {
-				currentUser.setPhoneNumber(messageText);
-				sendNewMessage(chatId, "Ваш номер добавлен или обновлён.\n");
-				checkIfFullInfoIsProvided(chatId);
-				log.warn(currentUser.toString());
-				if (!currentUser.isAlreadyRegistred()) {
-					sendNewMessage(chatId, "Введите ссылку на ваш никнейм в Instagram, начинающийся с символа '@':");
-				}
-			} else
-
-			if (messageText.startsWith("@")) {
-				currentUser.setInstagramNickname(messageText);
-				sendNewMessage(chatId, "Ваш никнейм в Instagram добавлен или обновлён.\n");
-				checkIfFullInfoIsProvided(chatId);
-				log.warn(currentUser.toString());
-			}
-
-			else {
-				sendNewMessage(chatId, DEFAULT);
-			}
-		} else if (update.hasCallbackQuery()) {
-			String callbackData = update.getCallbackQuery().getData();
-			long chatId = update.getCallbackQuery().getMessage().getChatId();
-			long messageId = update.getCallbackQuery().getMessage().getMessageId();
-			if (callbackData.equals(REGISTRATION)) {
-				sendNewMessage(chatId, "Введите ваши ФИО:");
-			} else if (callbackData.equals(HELP)) {
-				editCurrentMessage(chatId, messageId, CONTACTS);
-			}
+		if (isText(update)) {
+			reactionOnText(update);
+		} else if (isCallback(update)) {
+			reactionOnCallback(update);
+		} else if (isContact(update)) {
+			reactionOnContact(update);
 		}
 	}
 
-	private void sendNewMessage(long chatId, String textToSend) {
-		SendMessage messageToSend = new SendMessage();
-		messageToSend.setChatId(String.valueOf(chatId));
-		messageToSend.setText(textToSend);
-		if (textToSend.equals(REG_HELP_CHOICE)) {
-			InlineKeyboardMarkup markupInLine = chooseAnOption();
-			messageToSend.setReplyMarkup(markupInLine);
+	private void reactionOnText(Update update) {
+		String messageText = update.getMessage().getText().trim();
+		long chatId = update.getMessage().getChatId();
+		String userFirstName = update.getMessage().getChat().getFirstName();
+		String userNickname = update.getMessage().getChat().getUserName();
+
+		if (messageText.equals("/start")) {
+			startWorking(chatId, userFirstName, userNickname);
+		} else if (messageText.equals("/help")) {
+			sendNewMessage(chatId, CONTACTS);
+		} else if (messageText.startsWith("@") && !checkCyrillic(messageText)) {
+			instagramNickHandling(chatId, messageText);
 		}
+	}
+
+	private void reactionOnCallback(Update update) {
+		String callbackData = update.getCallbackQuery().getData();
+		long chatId = update.getCallbackQuery().getMessage().getChatId();
+		long messageId = update.getCallbackQuery().getMessage().getMessageId();
+
+		if (callbackData.equals(REGISTRATION)) {
+			registrationCallbackHandling(chatId, messageId);
+		} else if (callbackData.equals(HELP)) {
+			editCurrentMessage(chatId, messageId, CONTACTS);
+		}
+	}
+
+	private void reactionOnContact(Update update) {
+		long chatId = update.getMessage().getChatId();
+		if (checkIfRightContactRecieved(update)) {
+			if (usersAndMessages.get(chatId).isAlreadyGotContact() == false) {
+				dataTransferService.saveContactToUserDto(chatId, update.getMessage().getContact());
+				usersAndMessages.get(chatId).setAlreadyGotContact(true);
+				sendNewMessage(chatId, SEND_INSTAGRAM);
+				log.warn("Получили контакт, вот он: " + update.getMessage().getContact().toString());
+			} else {
+				sendNewMessage(chatId, DEFAULT);
+			}
+		} else {
+			sendNewMessage(chatId, "Отправьте ваш контакт для дальнейшей регистрации");
+		}
+	}
+
+	private void registrationCallbackHandling(long chatId, long messageId) {
+		if (dataTransferService.checkIfRegistered(chatId)) {
+			editCurrentMessage(chatId, messageId, YOU_REGISTERED_BEFORE);
+		} else {
+			sendNewMessage(chatId, REGISTRATION);
+		}
+
+	}
+
+	private void instagramNickHandling(long chatId, String messageText) {
+		if (usersAndMessages.get(chatId).isAlreadyGotInstaNick() == false) {
+			usersAndMessages.get(chatId).setInstagramNickname(messageText);
+			dataTransferService.checkIfFullInfoIsProvided(chatId);
+			usersAndMessages.get(chatId).setAlreadyGotInstaNick(true);
+			sendNewMessage(chatId, YOU_HAVE_REGISTERED);
+			log.warn("Итоговое ДТО: " + usersAndMessages.get(chatId).toString());
+		} else {
+			sendNewMessage(chatId, DEFAULT);
+		}
+	}
+
+	private void startWorking(long chatId, String userFirstName, String userNickname) {
+		String hello = EmojiParser.parseToUnicode("Привет, " + userFirstName + "! :blush:");
+		sendNewMessage(chatId, hello);
+		log.info("Поздоровались с " + userFirstName);
+
+		sendNewMessage(chatId, REG_OR_HELP_CHOICE);
+		getUsersAndMessages().put(chatId, new UserDto(chatId, userNickname, userFirstName));
+		log.warn("Сохранили первичную инфу о юзере:" + usersAndMessages.get(chatId).toString());
+
+	}
+
+	public static boolean checkCyrillic(String input) {
+		Pattern pattern = Pattern.compile("[а-яА-ЯёЁ]");
+		Matcher matcher = pattern.matcher(input);
+		return matcher.find();
+	}
+
+	/*
+	 * Этот метод призван проверить (хоть и не на 100%), что полученный контакт
+	 * принадлежит тому, кто его отправил. Потому что по факту ограничения на это в
+	 * ТГ нет.
+	 */
+	private boolean checkIfRightContactRecieved(Update update) {
+		String firstNameOfSender = update.getMessage().getChat().getFirstName();
+		String firstNameOfRecievedContact = update.getMessage().getContact().getFirstName();
+		return firstNameOfRecievedContact.equals(firstNameOfSender);
+	}
+
+	private boolean isContact(Update update) {
+		return update.hasMessage() && update.getMessage().hasContact();
+	}
+
+	private boolean isCallback(Update update) {
+		return update.hasCallbackQuery();
+	}
+
+	private boolean isText(Update update) {
+		return update.hasMessage() && update.getMessage().hasText();
+	}
+
+	private void sendNewMessage(long chatId, String textToSend) {
+		SendMessage messageToSend = messageService.createNewMessage(chatId, textToSend);
 		try {
 			execute(messageToSend);
 		} catch (TelegramApiException ex) {
@@ -130,63 +186,13 @@ public class TelegramBot extends TelegramLongPollingBot {
 	}
 
 	private void editCurrentMessage(long chatId, long messageId, String textToSend) {
-		EditMessageText messageToEdit = new EditMessageText();
-		messageToEdit.setChatId(String.valueOf(chatId));
-		messageToEdit.setText(textToSend);
-		messageToEdit.setMessageId((int) messageId);
-		if (textToSend.equals(CONTACTS)) {
-			InlineKeyboardMarkup markupInLine = chooseAnOption();
-			messageToEdit.setReplyMarkup(markupInLine);
-		}
+		EditMessageText messageToEdit = messageService.editCurrentMessage(chatId, messageId, textToSend);
 		try {
 			execute(messageToEdit);
 		} catch (TelegramApiException ex) {
-			log.error("Error occurred: " + ex.getMessage());
+			log.error("Не удалось отредактировать сообщение: " + ex.getMessage());
 		}
 
-	}
-
-	private void registerUser(UserDto currentUser) {
-		UserEntity userEntity = new UserEntity();
-		userEntity.setChatId(currentUser.getChatId());
-		userEntity.setFirstName(currentUser.getFirstName());
-		userEntity.setUserName(currentUser.getUserName());
-		userEntity.setUserFullName(currentUser.getUserFullName());
-		userEntity.setPhoneNumber(currentUser.getPhoneNumber());
-		userEntity.setInstagramNickname(currentUser.getInstagramNickname());
-		userRepository.save(userEntity);
-		log.info("Зарегистрирован: " + userEntity);
-	}
-
-	private void startCommandReceived(long chatId, String name) {
-		String answer = EmojiParser.parseToUnicode("Привет, " + name + "! :blush:");
-		sendNewMessage(chatId, answer);
-		log.info("Поздоровались с " + name);
-	}
-
-	private InlineKeyboardMarkup chooseAnOption() {
-		InlineKeyboardMarkup markupInLine = new InlineKeyboardMarkup();
-		List<List<InlineKeyboardButton>> rowsInLine = new ArrayList<>();
-		List<InlineKeyboardButton> rowInLine = new ArrayList<>();
-		var registrButton = new InlineKeyboardButton();
-		registrButton.setText("Регистрация");
-		registrButton.setCallbackData(REGISTRATION);
-		var helpButton = new InlineKeyboardButton();
-		helpButton.setText("Помощь");
-		helpButton.setCallbackData(HELP);
-		rowInLine.add(registrButton);
-		rowInLine.add(helpButton);
-		rowsInLine.add(rowInLine);
-		markupInLine.setKeyboard(rowsInLine);
-		return markupInLine;
-	}
-
-	private void checkIfFullInfoIsProvided(long chatId) {
-		if (currentUser.isFull() && !currentUser.isAlreadyRegistred()) {
-			sendNewMessage(chatId, YOU_REGISTERED + "\n" + currentUser.toString());
-			currentUser.setAlreadyRegistred(true);
-			registerUser(currentUser);
-		}
 	}
 
 	@Override
@@ -199,4 +205,52 @@ public class TelegramBot extends TelegramLongPollingBot {
 		return config.getToken();
 	}
 
+	public static Map<Long, UserDto> getUsersAndMessages() {
+		return usersAndMessages;
+	}
+
+	/*
+	 * // для тестов
+	 * 
+	 * @Scheduled(cron = "0 * * * * *") private void sendNotificationTest() { var
+	 * users = userRepository.findAll(); for (UserEntity user : users) {
+	 * sendNewMessage(user.getChatId(), HALF_AN_HOUR); } }
+	 */
+
+	// за 3 дня: 13:00 (в Москве будет 16:00), UTC+3, 24.09.2023
+	@Scheduled(cron = "0 0 13 24 9 ?", zone = "UTC")
+	private void sendNotification_BeforeThreeDays() {
+		var users = userRepository.findAll();
+		for (UserEntity user : users) {
+			sendNewMessage(user.getChatId(), THREE_DAYS_BEFORE);
+		}
+	}
+
+	// в день мероприятия: 06:00 (в Москве будет 09:00), UTC+3, 27.09.2023
+	@Scheduled(cron = "0 0 6 27 9 ?", zone = "UTC")
+	private void sendNotification_Today() {
+		var users = userRepository.findAll();
+		for (UserEntity user : users) {
+			sendNewMessage(user.getChatId(), TODAY);
+		}
+	}
+
+	// за 30 минут до начала: 12:30 (в Москве будет 15:30), UTC+3, 27.09.2023
+	@Scheduled(cron = "0 30 12 27 9 ?", zone = "UTC")
+	private void sendNotification_InHalfAnHour() {
+		var users = userRepository.findAll();
+		for (UserEntity user : users) {
+			sendNewMessage(user.getChatId(), HALF_AN_HOUR);
+		}
+	}
+
+	// после ивента: 15:00 (в Москве будет 18:00), UTC+3, 27.09.2023
+	@Scheduled(cron = "0 0 15 27 9 ?", zone = "UTC")
+	private void sendNotification_After() {
+		var users = userRepository.findAll();
+		for (UserEntity user : users) {
+			//реализовать передачу файла в sendNewMessage, комменты написал
+			sendNewMessage(user.getChatId(), AFTER_EVENT);
+		}
+	}
 }
