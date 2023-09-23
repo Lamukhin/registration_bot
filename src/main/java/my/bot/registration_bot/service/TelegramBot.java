@@ -12,6 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
+import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.Update;
@@ -96,7 +97,10 @@ public class TelegramBot extends TelegramLongPollingBot {
 			registrationCallbackHandling(chatId, messageId);
 		} else if (callbackData.equals(HELP)) {
 			editCurrentMessage(chatId, messageId, CONTACTS);
+		} else if (callbackData.equals(GET_FILE)) {
+			sendFile(chatId);
 		}
+
 	}
 
 	private void reactionOnContact(Update update) {
@@ -143,7 +147,7 @@ public class TelegramBot extends TelegramLongPollingBot {
 
 		sendNewMessage(chatId, REG_OR_HELP_CHOICE);
 		getUsersAndMessages().put(chatId, new UserDto(chatId, userNickname, userFirstName));
-		log.warn("Сохранили первичную инфу о юзере:" + usersAndMessages.get(chatId).toString());
+		log.warn("Получили первичную инфу о юзере:" + usersAndMessages.get(chatId).toString());
 
 	}
 
@@ -176,7 +180,7 @@ public class TelegramBot extends TelegramLongPollingBot {
 		return update.hasMessage() && update.getMessage().hasText();
 	}
 
-	private void sendNewMessage(long chatId, String textToSend) {
+	public void sendNewMessage(long chatId, String textToSend) {
 		SendMessage messageToSend = messageService.createNewMessage(chatId, textToSend);
 		try {
 			execute(messageToSend);
@@ -185,7 +189,7 @@ public class TelegramBot extends TelegramLongPollingBot {
 		}
 	}
 
-	private void editCurrentMessage(long chatId, long messageId, String textToSend) {
+	public void editCurrentMessage(long chatId, long messageId, String textToSend) {
 		EditMessageText messageToEdit = messageService.editCurrentMessage(chatId, messageId, textToSend);
 		try {
 			execute(messageToEdit);
@@ -193,6 +197,16 @@ public class TelegramBot extends TelegramLongPollingBot {
 			log.error("Не удалось отредактировать сообщение: " + ex.getMessage());
 		}
 
+	}
+
+	public void sendFile(long chatId) {
+		SendDocument sendDocument = messageService.sendFile(chatId);
+		try {
+			execute(sendDocument);
+			log.warn("Выслали файл пользователю с userId: " + userRepository.findByChatId(chatId).getUserId());
+		} catch (TelegramApiException ex) {
+			log.error("Не удалось отправить файл: " + ex.getMessage());
+		}
 	}
 
 	@Override
@@ -209,20 +223,22 @@ public class TelegramBot extends TelegramLongPollingBot {
 		return usersAndMessages;
 	}
 
-	/*
-	 * // для тестов
-	 * 
-	 * @Scheduled(cron = "0 * * * * *") private void sendNotificationTest() { var
-	 * users = userRepository.findAll(); for (UserEntity user : users) {
-	 * sendNewMessage(user.getChatId(), HALF_AN_HOUR); } }
-	 */
-
+	// *************************************************для тестов
+	@Scheduled(cron = "0 0 17 23 9 ?", zone = "UTC")
+	private void sendNotificationTest() {
+		var users = userRepository.findAll();
+		for (UserEntity user : users) {
+			sendNewMessage(user.getChatId(), THREE_DAYS_BEFORE);
+		}
+	}
+	//******************************************
+	
 	// за 3 дня: 13:00 (в Москве будет 16:00), UTC+3, 24.09.2023
 	@Scheduled(cron = "0 0 13 24 9 ?", zone = "UTC")
 	private void sendNotification_BeforeThreeDays() {
 		var users = userRepository.findAll();
 		for (UserEntity user : users) {
-			sendNewMessage(user.getChatId(), THREE_DAYS_BEFORE);
+			sendNewMessage(user.getChatId(), AFTER_EVENT);
 		}
 	}
 
@@ -249,7 +265,6 @@ public class TelegramBot extends TelegramLongPollingBot {
 	private void sendNotification_After() {
 		var users = userRepository.findAll();
 		for (UserEntity user : users) {
-			//реализовать передачу файла в sendNewMessage, комменты написал
 			sendNewMessage(user.getChatId(), AFTER_EVENT);
 		}
 	}

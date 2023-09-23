@@ -72,8 +72,7 @@ public class KeyboardMarkupServiceImpl implements KeyboardMarkupService {
 		List<InlineKeyboardButton> rowInLine = new ArrayList<>();
 		var getLinkButton = new InlineKeyboardButton();
 		getLinkButton.setText("Получить файл");
-		getLinkButton.setUrl(LINK);
-		//реализовать передачу файла
+		getLinkButton.setCallbackData(GET_FILE);
 		rowInLine.add(getLinkButton);
 		rowsInLine.add(rowInLine);
 		markupInLine.setKeyboard(rowsInLine);

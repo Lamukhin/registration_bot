@@ -2,10 +2,14 @@ package my.bot.registration_bot.service.impl;
 
 import static my.bot.registration_bot.text.Texts.*;
 
+import java.io.File;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
+import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardRemove;
@@ -48,8 +52,6 @@ public class MessageServiceImpl implements MessageService {
 		}
 		if (textToSend.equals(AFTER_EVENT)) {
 			InlineKeyboardMarkup markupInLine = keyboardMarkupService.getFileInlineMarkup();
-			//реализовать передачу файла или тут, или в keyboardMarkupService,
-			//метод там уже подготовлен
 			messageToSend.setReplyMarkup(markupInLine);
 		}
 		return messageToSend;
@@ -75,6 +77,15 @@ public class MessageServiceImpl implements MessageService {
 		}
 		return messageToEdit;
 	}
+	
+	@Override
+	public SendDocument sendFile(long chatId) {
+		File file = new File("E:\\eclipse-workspace\\registration_bot\\src\\main\\resources\\blank_ocenki_sotrudnikov_BF.xlsx");
+		SendDocument sendDocumentRequest = new SendDocument();
+	    sendDocumentRequest.setChatId(chatId);
+	    sendDocumentRequest.setDocument(new InputFile(file));
+		return sendDocumentRequest;
+	}
 
 	private String printUserData(long chatId) {
 		UserEntity user = userRepository.findByChatId(chatId);
@@ -85,4 +96,6 @@ public class MessageServiceImpl implements MessageService {
 				.append("Никнейм в Instagram: ").append(user.getInstagramNickname()).append("\n");
 		return userToString.toString();
 	}
+
+
 }

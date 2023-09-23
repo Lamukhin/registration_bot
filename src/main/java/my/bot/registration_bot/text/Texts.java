@@ -4,7 +4,7 @@ import com.vdurmont.emoji.EmojiParser;
 
 public interface Texts {
 	String blueHeart = EmojiParser.parseToUnicode(":blue_heart:");
-	String pinchedFingers = EmojiParser.parseFromUnicode("U+1F90C", null);
+	String pinchedFingers = "🫰";
 	String thumbsUp = EmojiParser.parseToUnicode(":+1:");
 
 	String REG_OR_HELP_CHOICE =
@@ -50,5 +50,6 @@ public interface Texts {
 			" \"Помощь\". Stay tuned и до новых встреч" + blueHeart;
 	
 	String LINK = "https://www.google.com/";
+	String GET_FILE = "Получить файл";
 	
 }
