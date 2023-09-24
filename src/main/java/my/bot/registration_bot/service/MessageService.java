@@ -7,5 +7,6 @@ import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageTe
 public interface MessageService {
 	SendMessage createNewMessage(long chatId, String textToSend);
 	EditMessageText editCurrentMessage(long chatId, long messageId, String textToSend);
-	SendDocument sendFile(long chatId);
+	SendDocument sendBlankFile(long chatId);
+	SendDocument sendCsvFile(long chatId);
 }

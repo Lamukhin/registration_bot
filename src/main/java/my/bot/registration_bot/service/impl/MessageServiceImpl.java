@@ -1,10 +1,20 @@
 package my.bot.registration_bot.service.impl;
 
 import static my.bot.registration_bot.text.Texts.*;
+import static my.bot.registration_bot.service.TelegramBot.*;
 
 import java.io.File;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+
+import javax.sql.DataSource;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
@@ -14,11 +24,13 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardRemove;
 
-import my.bot.registration_bot.dao.UserRepository;
+import lombok.extern.slf4j.Slf4j;
+import my.bot.registration_bot.dao.UserJpaRepository;
 import my.bot.registration_bot.entity.UserEntity;
 import my.bot.registration_bot.service.KeyboardMarkupService;
 import my.bot.registration_bot.service.MessageService;
 
+@Slf4j
 @Service
 public class MessageServiceImpl implements MessageService {
 
@@ -26,7 +38,23 @@ public class MessageServiceImpl implements MessageService {
 	KeyboardMarkupService keyboardMarkupService;
 
 	@Autowired
-	UserRepository userRepository;
+	UserJpaRepository userJpaRepository;
+	
+	@Value("${db.place_to_save}")
+	String linkToSave;
+	
+	@Value("$spring.datasource.url}")
+	String dbUrl;
+	
+	@Value("${spring.datasource.username}")
+	String dbUsername;
+	
+	@Value("${spring.datasource.password}")
+	String dbPassword;
+	
+	@Value("${file.upload}")
+	String blankFile;
+	
 
 	@Override
 	public SendMessage createNewMessage(long chatId, String textToSend) {
@@ -54,6 +82,11 @@ public class MessageServiceImpl implements MessageService {
 			InlineKeyboardMarkup markupInLine = keyboardMarkupService.getFileInlineMarkup();
 			messageToSend.setReplyMarkup(markupInLine);
 		}
+		if (textToSend.equals(CURRENT_LINK)) {
+			InlineKeyboardMarkup markupInLine = keyboardMarkupService.yesOrNoChoice();
+			messageToSend.setReplyMarkup(markupInLine);
+			messageToSend.setText(textToSend + links.get(links.size() - 1) + "\nХочешь изменить её?");
+		}
 		return messageToSend;
 	}
 
@@ -71,7 +104,7 @@ public class MessageServiceImpl implements MessageService {
 			messageToEdit.setText(
 					YOU_REGISTERED_BEFORE + 
 					printUserData(chatId) +
-					"Ссылка на конференцию: " + LINK +
+					"Ссылка на конференцию: " + links.get(links.size() - 1) +
 					"\nНачало 27 сентября ровно в 16:00 (по Мск)." +
 					"\n\nЕсли ты хочешь исправить личную информацию, свяжись с нашим администратором через /help");
 		}
@@ -79,8 +112,26 @@ public class MessageServiceImpl implements MessageService {
 	}
 	
 	@Override
-	public SendDocument sendFile(long chatId) {
-		File file = new File("E:\\eclipse-workspace\\registration_bot\\src\\main\\resources\\blank_ocenki_sotrudnikov_BF.xlsx");
+	public SendDocument sendBlankFile(long chatId) {
+		File file = new File(blankFile);
+		SendDocument sendDocumentRequest = new SendDocument();
+	    sendDocumentRequest.setChatId(chatId);
+	    sendDocumentRequest.setDocument(new InputFile(file));
+		return sendDocumentRequest;
+	}
+	
+	@Override
+	public SendDocument sendCsvFile(long chatId) {
+        try {
+        	Connection connection = DriverManager.getConnection(dbUrl, dbUsername, dbPassword);
+            Statement statement = connection.createStatement();
+            statement.executeQuery("COPY (SELECT * from users_data_table) To '" + linkToSave + "' (FORMAT CSV, ENCODING 'Windows-1251');");
+            statement.close();
+        } catch (SQLException ex) {
+            log.warn("Пользователь с chatId "+chatId + "запросил данные из БД");
+        }
+		
+		File file = new File(linkToSave);
 		SendDocument sendDocumentRequest = new SendDocument();
 	    sendDocumentRequest.setChatId(chatId);
 	    sendDocumentRequest.setDocument(new InputFile(file));
@@ -88,7 +139,7 @@ public class MessageServiceImpl implements MessageService {
 	}
 
 	private String printUserData(long chatId) {
-		UserEntity user = userRepository.findByChatId(chatId);
+		UserEntity user = userJpaRepository.findByChatId(chatId);
 		StringBuilder userToString = new StringBuilder();
 		userToString
 				.append("Никнейм в Telegram: ").append(user.getUserName()).append("\n")
@@ -96,6 +147,5 @@ public class MessageServiceImpl implements MessageService {
 				.append("Никнейм в Instagram: ").append(user.getInstagramNickname()).append("\n");
 		return userToString.toString();
 	}
-
 
 }

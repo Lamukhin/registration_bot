@@ -1,6 +1,7 @@
 package my.bot.registration_bot.service.impl;
 
 import static my.bot.registration_bot.text.Texts.*;
+import static my.bot.registration_bot.service.TelegramBot.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -58,7 +59,7 @@ public class KeyboardMarkupServiceImpl implements KeyboardMarkupService {
 		List<InlineKeyboardButton> rowInLine = new ArrayList<>();
 		var getLinkButton = new InlineKeyboardButton();
 		getLinkButton.setText("Получить ссылку на конференцию");
-		getLinkButton.setUrl(LINK);
+		getLinkButton.setUrl(links.get(links.size()-1));
 		rowInLine.add(getLinkButton);
 		rowsInLine.add(rowInLine);
 		markupInLine.setKeyboard(rowsInLine);
@@ -74,6 +75,24 @@ public class KeyboardMarkupServiceImpl implements KeyboardMarkupService {
 		getLinkButton.setText("Получить файл");
 		getLinkButton.setCallbackData(GET_FILE);
 		rowInLine.add(getLinkButton);
+		rowsInLine.add(rowInLine);
+		markupInLine.setKeyboard(rowsInLine);
+		return markupInLine;
+	}
+	
+	@Override
+	public InlineKeyboardMarkup yesOrNoChoice() {
+		InlineKeyboardMarkup markupInLine = new InlineKeyboardMarkup();
+		List<List<InlineKeyboardButton>> rowsInLine = new ArrayList<>();
+		List<InlineKeyboardButton> rowInLine = new ArrayList<>();
+		var yesButton = new InlineKeyboardButton();
+		yesButton.setText("Да");
+		yesButton.setCallbackData(YES_BUTTON);
+		var noButton = new InlineKeyboardButton();
+		noButton.setText("Нет");
+		noButton.setCallbackData(NO_BUTTON);
+		rowInLine.add(yesButton);
+		rowInLine.add(noButton);
 		rowsInLine.add(rowInLine);
 		markupInLine.setKeyboard(rowsInLine);
 		return markupInLine;

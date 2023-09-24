@@ -8,4 +8,5 @@ public interface KeyboardMarkupService {
 	ReplyKeyboardMarkup shareContactKeyboardMarkup();
 	InlineKeyboardMarkup getLinkInlineMarkup();
 	InlineKeyboardMarkup getFileInlineMarkup();
+	InlineKeyboardMarkup yesOrNoChoice();
 }

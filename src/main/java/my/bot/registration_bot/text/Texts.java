@@ -1,5 +1,7 @@
 package my.bot.registration_bot.text;
 
+import static my.bot.registration_bot.service.TelegramBot.*;
+
 import com.vdurmont.emoji.EmojiParser;
 
 public interface Texts {
@@ -39,7 +41,7 @@ public interface Texts {
 			" записать всю полезную информацию, которую ты сегодня услышишь. Ждем тебя"+
 			blueHeart;
 	String HALF_AN_HOUR =
-			"Ровно через 30 минут начнется долгожданная встреча с Артемом Викторовичем,"+
+			"Ровно через 30 минут начнется долгожданная встреча с Артёмом Викторовичем,"+
 			" где мы разберем самые частые ошибки гостеприимства и, конечно же, дадим решения,"+
 			" как их избежать. Не пропусти самое интересное!";
 	String AFTER_EVENT =
@@ -49,7 +51,12 @@ public interface Texts {
 			" все равно останутся вопросы, смело пиши нашему специалисту, нажав на кнопку"+
 			" \"Помощь\". Stay tuned и до новых встреч" + blueHeart;
 	
-	String LINK = "https://www.google.com/";
+	String YES_BUTTON = "Да";
+	String NO_BUTTON = "Нет";
+	
 	String GET_FILE = "Получить файл";
+	String CHANGE_LINK = "/change_link";
+	String CURRENT_LINK = "Текущая ссылка на мероприятие: "/* + LINK + "\nХочешь изменить её?"*/;
+	String GET_DATA = "/get_data";
 	
 }

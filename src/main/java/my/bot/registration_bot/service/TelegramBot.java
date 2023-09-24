@@ -24,9 +24,10 @@ import com.vdurmont.emoji.EmojiParser;
 
 import lombok.extern.slf4j.Slf4j;
 import my.bot.registration_bot.config.BotConfig;
-import my.bot.registration_bot.dao.UserRepository;
+import my.bot.registration_bot.dao.UserJpaRepository;
 import my.bot.registration_bot.dto.UserDto;
 import my.bot.registration_bot.entity.UserEntity;
+import my.bot.registration_bot.service.impl.MessageServiceImpl;
 
 import static my.bot.registration_bot.text.Texts.*;
 
@@ -39,7 +40,7 @@ public class TelegramBot extends TelegramLongPollingBot {
 	@Autowired
 	private DataTransferService dataTransferService;
 	@Autowired
-	private UserRepository userRepository;
+	private UserJpaRepository userJpaRepository;
 
 	final BotConfig config;
 
@@ -48,18 +49,13 @@ public class TelegramBot extends TelegramLongPollingBot {
 	// ботом.
 
 	private static Map<Long, UserDto> usersAndMessages = new HashMap<>();
+	public static List<String> links = new ArrayList<>();
 
 	// инициализация бота с конфигурацией и листом команд
 	public TelegramBot(BotConfig botConfig) {
 		this.config = botConfig;
-		List<BotCommand> listOfCommands = new ArrayList<>();
-		listOfCommands.add(new BotCommand("/start", "Начать использовать бота"));
-		listOfCommands.add(new BotCommand("/help", "Обратиться за помощью"));
-		try {
-			this.execute(new SetMyCommands(listOfCommands, new BotCommandScopeDefault(), null));
-		} catch (TelegramApiException ex) {
-			log.error("Error setting bot's command list : " + ex.getMessage());
-		}
+		links.add("https://www.google.com/");
+		createListOfCommands();
 	}
 
 	@Override
@@ -73,18 +69,40 @@ public class TelegramBot extends TelegramLongPollingBot {
 		}
 	}
 
+	private void createListOfCommands() {
+		List<BotCommand> listOfCommands = new ArrayList<>();
+		listOfCommands.add(new BotCommand("/start", "Начать использовать бота"));
+		listOfCommands.add(new BotCommand("/help", "Обратиться за помощью"));
+		try {
+			this.execute(new SetMyCommands(listOfCommands, new BotCommandScopeDefault(), null));
+		} catch (TelegramApiException ex) {
+			log.error("Не удалось установить команды боту : " + ex.getMessage());
+		}
+	}
+
 	private void reactionOnText(Update update) {
 		String messageText = update.getMessage().getText().trim();
 		long chatId = update.getMessage().getChatId();
 		String userFirstName = update.getMessage().getChat().getFirstName();
 		String userNickname = update.getMessage().getChat().getUserName();
+		String chatIdToString = ((Long) chatId).toString();
 
 		if (messageText.equals("/start")) {
 			startWorking(chatId, userFirstName, userNickname);
 		} else if (messageText.equals("/help")) {
 			sendNewMessage(chatId, CONTACTS);
+		} else if (messageText.equals("/get_data") && config.getAdminsUserId().contains(chatIdToString)) {
+			sendCsvFile(chatId);
+		} else if (messageText.equals("/change_link") && config.getAdminsUserId().contains(chatIdToString)) {
+			sendNewMessage(chatId, CURRENT_LINK);
+		} else if (messageText.contains("/") && messageText.contains(".") && !messageText.startsWith("@")) {
+			links.add(messageText);
+			sendNewMessage(chatId, "Ссылка успешно изменена!");
+			log.warn("Пользователь с chatId "+chatId+" изменил ссылку на " + messageText);
 		} else if (messageText.startsWith("@") && !checkCyrillic(messageText)) {
 			instagramNickHandling(chatId, messageText);
+		} else {
+			sendNewMessage(chatId, DEFAULT);
 		}
 	}
 
@@ -98,7 +116,11 @@ public class TelegramBot extends TelegramLongPollingBot {
 		} else if (callbackData.equals(HELP)) {
 			editCurrentMessage(chatId, messageId, CONTACTS);
 		} else if (callbackData.equals(GET_FILE)) {
-			sendFile(chatId);
+			sendBlankFile(chatId);
+		} else if (callbackData.equals(YES_BUTTON)) {
+			sendNewMessage(chatId, "Пришли новую ссылку");
+		} else if (callbackData.equals(NO_BUTTON)) {
+			sendNewMessage(chatId, REG_OR_HELP_CHOICE);
 		}
 
 	}
@@ -142,6 +164,12 @@ public class TelegramBot extends TelegramLongPollingBot {
 
 	private void startWorking(long chatId, String userFirstName, String userNickname) {
 		String hello = EmojiParser.parseToUnicode("Привет, " + userFirstName + "! :blush:");
+		String chatIdToString = ((Long) chatId).toString();
+		if (config.getAdminsUserId().contains(chatIdToString)) {
+			hello += "\nУ тебя полномочия администратора, тебе доступны команды /get_data,"
+					+ " с помощью которой можно выгрузить информацию о пользователях бота из базы данных, "
+					+ "и /change_link, которая позволит установить или изменить ссылку на мероприятие";
+		}
 		sendNewMessage(chatId, hello);
 		log.info("Поздоровались с " + userFirstName);
 
@@ -199,11 +227,21 @@ public class TelegramBot extends TelegramLongPollingBot {
 
 	}
 
-	public void sendFile(long chatId) {
-		SendDocument sendDocument = messageService.sendFile(chatId);
+	public void sendBlankFile(long chatId) {
+		SendDocument sendDocument = messageService.sendBlankFile(chatId);
 		try {
 			execute(sendDocument);
-			log.warn("Выслали файл пользователю с userId: " + userRepository.findByChatId(chatId).getUserId());
+			log.warn("Выслали файл пользователю с userId: " + userJpaRepository.findByChatId(chatId).getUserId());
+		} catch (TelegramApiException ex) {
+			log.error("Не удалось отправить файл: " + ex.getMessage());
+		}
+	}
+	
+	public void sendCsvFile(long chatId) {
+		SendDocument sendDocument = messageService.sendCsvFile(chatId);
+		try {
+			execute(sendDocument);
+			log.warn("Выслали файл пользователю с userId: " + userJpaRepository.findByChatId(chatId).getUserId());
 		} catch (TelegramApiException ex) {
 			log.error("Не удалось отправить файл: " + ex.getMessage());
 		}
@@ -222,30 +260,30 @@ public class TelegramBot extends TelegramLongPollingBot {
 	public static Map<Long, UserDto> getUsersAndMessages() {
 		return usersAndMessages;
 	}
-
+	
 	// *************************************************для тестов
-	@Scheduled(cron = "0 0 17 23 9 ?", zone = "UTC")
+	@Scheduled(cron = "0 45 12 23 9 ?", zone = "UTC")
 	private void sendNotificationTest() {
-		var users = userRepository.findAll();
+		var users = userJpaRepository.findAll();
 		for (UserEntity user : users) {
 			sendNewMessage(user.getChatId(), THREE_DAYS_BEFORE);
 		}
 	}
-	//******************************************
-	
+	// ******************************************
+
 	// за 3 дня: 13:00 (в Москве будет 16:00), UTC+3, 24.09.2023
 	@Scheduled(cron = "0 0 13 24 9 ?", zone = "UTC")
 	private void sendNotification_BeforeThreeDays() {
-		var users = userRepository.findAll();
+		var users = userJpaRepository.findAll();
 		for (UserEntity user : users) {
-			sendNewMessage(user.getChatId(), AFTER_EVENT);
+			sendNewMessage(user.getChatId(), THREE_DAYS_BEFORE);
 		}
 	}
 
 	// в день мероприятия: 06:00 (в Москве будет 09:00), UTC+3, 27.09.2023
 	@Scheduled(cron = "0 0 6 27 9 ?", zone = "UTC")
 	private void sendNotification_Today() {
-		var users = userRepository.findAll();
+		var users = userJpaRepository.findAll();
 		for (UserEntity user : users) {
 			sendNewMessage(user.getChatId(), TODAY);
 		}
@@ -254,7 +292,7 @@ public class TelegramBot extends TelegramLongPollingBot {
 	// за 30 минут до начала: 12:30 (в Москве будет 15:30), UTC+3, 27.09.2023
 	@Scheduled(cron = "0 30 12 27 9 ?", zone = "UTC")
 	private void sendNotification_InHalfAnHour() {
-		var users = userRepository.findAll();
+		var users = userJpaRepository.findAll();
 		for (UserEntity user : users) {
 			sendNewMessage(user.getChatId(), HALF_AN_HOUR);
 		}
@@ -263,7 +301,7 @@ public class TelegramBot extends TelegramLongPollingBot {
 	// после ивента: 15:00 (в Москве будет 18:00), UTC+3, 27.09.2023
 	@Scheduled(cron = "0 0 15 27 9 ?", zone = "UTC")
 	private void sendNotification_After() {
-		var users = userRepository.findAll();
+		var users = userJpaRepository.findAll();
 		for (UserEntity user : users) {
 			sendNewMessage(user.getChatId(), AFTER_EVENT);
 		}

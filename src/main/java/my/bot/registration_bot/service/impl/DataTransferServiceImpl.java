@@ -8,7 +8,7 @@ import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.objects.Contact;
 
 import lombok.extern.slf4j.Slf4j;
-import my.bot.registration_bot.dao.UserRepository;
+import my.bot.registration_bot.dao.UserJpaRepository;
 import my.bot.registration_bot.dto.UserDto;
 import my.bot.registration_bot.entity.UserEntity;
 import my.bot.registration_bot.service.DataTransferService;
@@ -19,7 +19,7 @@ import my.bot.registration_bot.service.MessageService;
 public class DataTransferServiceImpl implements DataTransferService {
 
 	@Autowired
-	UserRepository userRepository;
+	UserJpaRepository userJpaRepository;
 	
 	@Autowired
 	MessageService messageService;
@@ -36,7 +36,7 @@ public class DataTransferServiceImpl implements DataTransferService {
 
 		userEntity.setPhoneNumber(currentUser.getPhoneNumber());
 		userEntity.setInstagramNickname(currentUser.getInstagramNickname());
-		userRepository.save(userEntity);
+		userJpaRepository.save(userEntity);
 		log.info("Зарегистрирован: " + userEntity);
 
 	}
@@ -61,10 +61,9 @@ public class DataTransferServiceImpl implements DataTransferService {
 
 	@Override
 	public boolean checkIfRegistered(long chatId) {
-		if (userRepository.findByChatId(chatId) == null) {
+		if (userJpaRepository.findByChatId(chatId) == null) {
 			return false;
 		}
 		return true;
 	}
-
 }
