@@ -151,12 +151,19 @@ public class TelegramBot extends TelegramLongPollingBot {
 	}
 
 	private void instagramNickHandling(long chatId, String messageText) {
+		if(usersAndMessages.get(chatId) == null) {
+			sendNewMessage(chatId, DEFAULT);
+			return;
+		}
 		if (usersAndMessages.get(chatId).isAlreadyGotInstaNick() == false) {
 			usersAndMessages.get(chatId).setInstagramNickname(messageText);
-			dataTransferService.checkIfFullInfoIsProvided(chatId);
 			usersAndMessages.get(chatId).setAlreadyGotInstaNick(true);
+			dataTransferService.checkIfFullInfoIsProvided(chatId);
 			sendNewMessage(chatId, YOU_HAVE_REGISTERED);
 			log.warn("Итоговое ДТО: " + usersAndMessages.get(chatId).toString());
+
+			getUsersAndMessages().remove(chatId);
+			log.info("MapsData: " + getUsersAndMessages());
 		} else {
 			sendNewMessage(chatId, DEFAULT);
 		}
