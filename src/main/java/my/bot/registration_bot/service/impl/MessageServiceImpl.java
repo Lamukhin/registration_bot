@@ -15,6 +15,7 @@ import javax.sql.DataSource;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.PropertySource;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
@@ -25,6 +26,8 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMar
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardRemove;
 
 import lombok.extern.slf4j.Slf4j;
+import my.bot.registration_bot.config.BotConfig;
+import my.bot.registration_bot.config.ConnectionConfig;
 import my.bot.registration_bot.dao.UserJpaRepository;
 import my.bot.registration_bot.entity.UserEntity;
 import my.bot.registration_bot.service.KeyboardMarkupService;
@@ -33,6 +36,8 @@ import my.bot.registration_bot.service.MessageService;
 @Slf4j
 @Service
 public class MessageServiceImpl implements MessageService {
+	
+	final ConnectionConfig connectionConfig;
 
 	@Autowired
 	KeyboardMarkupService keyboardMarkupService;
@@ -40,21 +45,9 @@ public class MessageServiceImpl implements MessageService {
 	@Autowired
 	UserJpaRepository userJpaRepository;
 	
-	@Value("${db.place_to_save}")
-	String linkToSave;
-	
-	@Value("$spring.datasource.url}")
-	String dbUrl;
-	
-	@Value("${spring.datasource.username}")
-	String dbUsername;
-	
-	@Value("${spring.datasource.password}")
-	String dbPassword;
-	
-	@Value("${file.upload}")
-	String blankFile;
-	
+	public MessageServiceImpl(ConnectionConfig connectionConfig) {
+		this.connectionConfig = connectionConfig;
+	}
 
 	@Override
 	public SendMessage createNewMessage(long chatId, String textToSend) {
@@ -113,7 +106,7 @@ public class MessageServiceImpl implements MessageService {
 	
 	@Override
 	public SendDocument sendBlankFile(long chatId) {
-		File file = new File(blankFile);
+		File file = new File(connectionConfig.getBlankFile());
 		SendDocument sendDocumentRequest = new SendDocument();
 	    sendDocumentRequest.setChatId(chatId);
 	    sendDocumentRequest.setDocument(new InputFile(file));
@@ -123,15 +116,21 @@ public class MessageServiceImpl implements MessageService {
 	@Override
 	public SendDocument sendCsvFile(long chatId) {
         try {
-        	Connection connection = DriverManager.getConnection(dbUrl, dbUsername, dbPassword);
+        	Connection connection = DriverManager.getConnection(
+        			connectionConfig.getDbUrl(), 
+        			connectionConfig.getDbUsername(),
+        			connectionConfig.getDbPassword());
             Statement statement = connection.createStatement();
-            statement.executeQuery("COPY (SELECT * from users_data_table) To '" + linkToSave + "' (FORMAT CSV, ENCODING 'Windows-1251');");
+            statement.executeQuery(
+            		"COPY (SELECT * from users_data_table) To '"+
+            		connectionConfig.getLinkToSave() +
+            		"' (FORMAT CSV, ENCODING 'Windows-1251');");
             statement.close();
         } catch (SQLException ex) {
-            log.warn("Пользователь с chatId "+chatId + "запросил данные из БД");
+            log.warn("Пользователь с chatId "+chatId + "запросил данные из БД" + ex);
         }
 		
-		File file = new File(linkToSave);
+		File file = new File(connectionConfig.getLinkToSave());
 		SendDocument sendDocumentRequest = new SendDocument();
 	    sendDocumentRequest.setChatId(chatId);
 	    sendDocumentRequest.setDocument(new InputFile(file));

@@ -15,10 +15,13 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableJpaRepositories("my.bot.registration_bot.dao")
 @PropertySource("application.properties")
 public class BotConfig {
+	
 	@Value("${bot.name}")
 	String botName;
+	
 	@Value("${bot.token}")
 	String token;
+	
 	@Value("${bot.admins_user_id}")
 	List<String> adminsUserId;
 	

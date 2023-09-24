@@ -262,11 +262,11 @@ public class TelegramBot extends TelegramLongPollingBot {
 	}
 	
 	// *************************************************для тестов
-	@Scheduled(cron = "0 45 12 23 9 ?", zone = "UTC")
+	//@Scheduled(cron = "30 * * * * *", zone = "UTC")
 	private void sendNotificationTest() {
 		var users = userJpaRepository.findAll();
 		for (UserEntity user : users) {
-			sendNewMessage(user.getChatId(), THREE_DAYS_BEFORE);
+			sendNewMessage(user.getChatId(), AFTER_EVENT);
 		}
 	}
 	// ******************************************
